@@ -12,12 +12,16 @@ typedef struct Hook {
   callback_close originalClose;
   callback_read originalRead;
   callback_write originalWrite;
+  callback_seek originalSeek;
 } Hook;
 
 static Hook hooks[MAX_HOOKS];
 
-Hook* getHookForProtocol(char *name) {
+Hook* getHookForProtocol(char* name) {
   for (int i = 0; i < MAX_HOOKS; ++i) {
+    if (hooks[i].name == NULL) {
+      continue;
+    }
     if (!strcmp(hooks[i].name, name)) {
       return &hooks[i];
     }
@@ -25,81 +29,84 @@ Hook* getHookForProtocol(char *name) {
   return NULL;
 }
 
-Hook* addHookForProtocol(char *name) {
+Hook* addHookForProtocol(char* name) {
   for (int i = 0; i < MAX_HOOKS; ++i) {
-    if (!strcmp(hooks[i].name, name)) {
+    if (hooks[i].name == NULL) {
+      hooks[i].name = strdup(name);
       return &hooks[i];
     }
   }
   return NULL;
 }
 
-// TODO: save callbacks by name to support hooking multiple protocols
-callback_open originalOpen;
-callback_close originalClose;
-callback_read originalRead;
-callback_write originalWrite;
-callback_seek originalSeek;
+void removeHook(Hook* hook) {
+  hook->name = NULL;
+  hook->originalOpen = NULL;
+  hook->originalClose = NULL;
+  hook->originalRead = NULL;
+  hook->originalWrite = NULL;
+  hook->originalSeek = NULL;
+}
 
-void installOpenHook(URLProtocol* protocol) {
-  originalOpen = protocol->url_open;
+void installOpenHook(Hook* hook, URLProtocol* protocol) {
+  hook->originalOpen = protocol->url_open;
   protocol->url_open = cOpenHook;
 }
 
-void installCloseHook(URLProtocol* protocol) {
-  originalClose = protocol->url_close;
+void installCloseHook(Hook* hook, URLProtocol* protocol) {
+  hook->originalClose = protocol->url_close;
   protocol->url_close = cCloseHook;
 }
 
-void installReadHook(URLProtocol* protocol) {
-  originalRead = protocol->url_read;
+void installReadHook(Hook* hook, URLProtocol* protocol) {
+  hook->originalRead = protocol->url_read;
   protocol->url_read = cReadHook;
 }
 
-void installWriteHook(URLProtocol* protocol) {
-  originalWrite = protocol->url_write;
+void installWriteHook(Hook* hook, URLProtocol* protocol) {
+  hook->originalWrite = protocol->url_write;
   protocol->url_write = cWriteHook;
 }
 
-void installSeekHook(URLProtocol* protocol) {
-  originalSeek = protocol->url_seek;
+void installSeekHook(Hook* hook, URLProtocol* protocol) {
+  hook->originalSeek = protocol->url_seek;
   protocol->url_seek = cSeekHook;
 }
 
-void uninstallOpenHook(URLProtocol* protocol) {
-  protocol->url_open = originalOpen;
+void uninstallOpenHook(Hook* hook, URLProtocol* protocol) {
+  protocol->url_open = hook->originalOpen;
 }
 
-void uninstallCloseHook(URLProtocol* protocol) {
-  protocol->url_close = originalClose;
+void uninstallCloseHook(Hook* hook, URLProtocol* protocol) {
+  protocol->url_close = hook->originalClose;
 }
 
-void uninstallReadHook(URLProtocol* protocol) {
-  protocol->url_read = originalRead;
+void uninstallReadHook(Hook* hook, URLProtocol* protocol) {
+  protocol->url_read = hook->originalRead;
 }
 
-void uninstallWriteHook(URLProtocol* protocol) {
-  protocol->url_write = originalWrite;
+void uninstallWriteHook(Hook* hook, URLProtocol* protocol) {
+  protocol->url_write = hook->originalWrite;
 }
 
-void uninstallSeekHook(URLProtocol* protocol) {
-  protocol->url_seek = originalSeek;
+void uninstallSeekHook(Hook* hook, URLProtocol* protocol) {
+  protocol->url_seek = hook->originalSeek;
 }
 
-void installHook(URLProtocol* protocol) {
-  installOpenHook(protocol);
-  installCloseHook(protocol);
-  installReadHook(protocol);
-  installWriteHook(protocol);
-  installSeekHook(protocol);
+void installHook(Hook* hook, URLProtocol* protocol) {
+  installOpenHook(hook, protocol);
+  installCloseHook(hook, protocol);
+  installReadHook(hook, protocol);
+  installWriteHook(hook, protocol);
+  installSeekHook(hook, protocol);
 }
 
-void uninstallHook(URLProtocol* protocol) {
-  uninstallOpenHook(protocol);
-  uninstallCloseHook(protocol);
-  uninstallReadHook(protocol);
-  uninstallWriteHook(protocol);
-  uninstallSeekHook(protocol);
+void uninstallHook(Hook* hook, URLProtocol* protocol) {
+  uninstallOpenHook(hook, protocol);
+  uninstallCloseHook(hook, protocol);
+  uninstallReadHook(hook, protocol);
+  uninstallWriteHook(hook, protocol);
+  uninstallSeekHook(hook, protocol);
 }
 
 URLProtocol* getProtocolByName(char *name) {
@@ -120,12 +127,17 @@ int installHookForProtocol(char *name) {
     printf("Protocol not found protocol: %s\n", name);
     return -1;
   }
-  /*  Hook* hook = getHookForProtocol(name);
+  Hook* hook = getHookForProtocol(name);
   if (hook != NULL) {
     printf("Hook already installed for protocol: %s\n", name);
     return -1;
-    }*/
-  installHook(protocol);
+  }
+  hook = addHookForProtocol(name);
+  if (hook == NULL) {
+    printf("Could not add new hook for protocol: %s\n", name);
+    return -1;
+  }
+  installHook(hook, protocol);
   return 0;
 }
 
@@ -135,12 +147,12 @@ int uninstallHookForProtocol(char *name) {
     printf("Protocol not found protocol: %s\n", name);
     return -1;
   }
-  /* Hook* hook = getHookForProtocol(name);
+  Hook* hook = getHookForProtocol(name);
   if (hook == NULL) {
     printf("No hook installed for protocol: %s\n", name);
     return -1;
-    }*/
-  uninstallHook(protocol);
+  }
+  uninstallHook(hook, protocol);
   return 0;
 }
 
@@ -162,11 +174,6 @@ int cCloseHook(URLContext *h) {
 int cReadHook(URLContext *h, unsigned char *buf, int size) {
   printf("C.cReadHook called with filename %s\n", h->filename);
   int ret = go_read(h, buf, size);
-  /*
-  for (int i = 0; i < ret; ++i) {
-     printf("%02X ", buf[i]);
-  }
-  */
   printf("go_read returned %d\n", ret);
   return ret;
 }
