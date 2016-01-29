@@ -46,6 +46,7 @@ func (h *ExampleFileHook) Close(filename string) int {
 	if err != nil {
 		return -1
 	}
+	delete(h.files, filename)
 	return 0
 }
 
@@ -76,12 +77,26 @@ func (h *ExampleFileHook) Write(filename string, buf []byte, size int) int {
 	return n
 }
 
+func (h *ExampleFileHook) Seek(filename string, pos int64, whence int) int64 {
+	fmt.Printf("Seeking in file %s\n", filename)
+	if _, ok := h.files[filename]; !ok {
+		fmt.Printf("File not open: %s\n", filename)
+		return -1
+	}
+	newPos, err := h.files[filename].Seek(pos, whence)
+	if err != nil {
+		return -1
+	}
+	return newPos
+}
+
 // TODO: maybe remove size parameter since its useless in go
 type ProtocolHook interface {
 	Open(filename string) int
 	Close(filename string) int
 	Read(filename string, buf []byte, size int) int
 	Write(filename string, buf []byte, size int) int
+	Seek(filename string, pos int64, whence int) int64
 }
 
 var hooks map[string]ProtocolHook = make(map[string]ProtocolHook)
@@ -152,4 +167,14 @@ func go_write(h *C.URLContext, buf unsafe.Pointer, size C.int) int {
 	}
 	goBuffer := C.GoBytes(buf, size)
 	return hooks[protocolName].Write(filename, goBuffer, int(size))
+}
+
+//export go_seek
+func go_seek(h *C.URLContext, pos C.int64_t, whence C.int) int64 {
+	protocolName := C.GoString(h.prot.name)
+	filename := C.GoString(h.filename)
+	if _, ok := hooks[protocolName]; !ok {
+		return -1
+	}
+	return hooks[protocolName].Seek(filename, int64(pos), int(whence))
 }
