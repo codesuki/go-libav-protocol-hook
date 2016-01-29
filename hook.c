@@ -109,6 +109,11 @@ int cCloseHook(URLContext *h) {
 int cReadHook(URLContext *h, unsigned char *buf, int size) {
   printf("C.cReadHook called with filename %s\n", h->filename);
   int ret = go_read(h, buf, size);
+  /*
+  for (int i = 0; i < ret; ++i) {
+     printf("%02X ", buf[i]);
+  }
+  */
   printf("go_read returned %d\n", ret);
   return ret;
 }

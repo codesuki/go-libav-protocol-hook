@@ -133,13 +133,13 @@ func go_close(h *C.URLContext) int {
 }
 
 //export go_read
-func go_read(h *C.URLContext, buf unsafe.Pointer, size C.int) int {
+func go_read(h *C.URLContext, buf *C.uchar, size C.int) int {
 	protocolName := C.GoString(h.prot.name)
 	filename := C.GoString(h.filename)
 	if _, ok := hooks[protocolName]; !ok {
 		return -1
 	}
-	goBuffer := C.GoBytes(buf, size)
+	goBuffer := (*[1 << 30]byte)(unsafe.Pointer(buf))[:size:size]
 	return hooks[protocolName].Read(filename, goBuffer, int(size))
 }
 
